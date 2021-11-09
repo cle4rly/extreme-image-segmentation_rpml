@@ -1,12 +1,25 @@
 import re
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.spatial import Voronoi, voronoi_plot_2d
+from scipy.spatial import Voronoi
 import random
+
+from mpl_toolkits import mplot3d
+
+
+SUBVOLUME_NUMBER = 8               # m
+STARTING_SUBVOLUME_NUMBER = 5     # n >> m
+UNIT_CUBE_MARGIN = 0.1              # area to place random voronoi tessellation points
 
 
 def get_random_points(number):
-    return np.array([[random.random()*1.2-0.1, random.random()*1.2-0.1] for i in range(number)])
+    points = list()
+    for _ in range(number):
+        p1 = random.random() * (1+2*UNIT_CUBE_MARGIN) - UNIT_CUBE_MARGIN
+        p2 = random.random() * (1+2*UNIT_CUBE_MARGIN) - UNIT_CUBE_MARGIN
+        p3 = random.random() * (1+2*UNIT_CUBE_MARGIN) - UNIT_CUBE_MARGIN
+        points.append([p1, p2 ,p3])
+    return points
 
 def intersection(r1, r2):
     set1 = set(r1)-{-1}
@@ -16,7 +29,7 @@ def intersection(r1, r2):
 def get_neighbors(region, regions):
     neighbors = list()
     for r in regions:
-        if len(intersection(r, region))==2:
+        if len(intersection(r, region)) == 3:
             neighbors.append(r)
     return neighbors
 
@@ -27,42 +40,69 @@ def get_edges_of_vertex(v_index, edges):
             es.append(e)
     return es
 
-r = get_random_points(100)
-#r = [[0.3863602898843641, 1.0929778132341303], [0.488783338491796, 0.09511908149117629], [0.7414116453691986, 0.5340786312892531], [0.7582838993856439, 0.654603451134685], [0.8193381899575712, 0.8287658051549769], [0.3291007511039533, 0.609072371232381], [0.9154590791000078, 0.25526264878612803], [0.1605696728703027, 0.01757623980406707], [0.747059451722859, 0.31226004858971723], [0.33286369589929665, 0.6303232841464208], [0.6451352759547719, 0.046747103601636586], [0.03717135915408448, 0.6648414260493695], [0.7899444508492676, 0.9057536625089343], [0.5326643597141593, 0.08798481078044754], [0.5856785432211077, 0.4968921277545133], [0.5245193873185676, 0.11917414586927899], [1.0039698202571792, 0.1982913774757786], [0.507248859810101, 0.3925944004745897], [1.0636374292103608, 0.3026697725832761], [1.0704415162056575, 0.7576225172193541], [0.17537530340539412, 0.6905057697301114], [0.33082834113500015, 0.8321947059828867], [0.5357678948106371, 0.2768609539872794], [0.7991574815693013, 0.0230617690690971], [0.27653899995786657, 0.7769444273795738], [0.4231799788023427, -0.09420459033766422], [0.22327737565988728, 0.11471262918470407], [0.159320893614981, 1.0712522466411067], [-0.013950562716129392, 0.3015998750721267], [0.2780448054622967, 0.5931212931072525], [0.43752177024487415, 0.16368252695539268], [0.704912529477772, 0.45214981423217293], [0.19007286743742627, 0.9827254103290991], [1.0602874103577904, -0.06744910103457635], [-0.0723607717881054, 0.921931553836301], [0.8571861367080885, 0.06465658738311342], [0.04760532412139587, 0.7198283416110116], [0.9301747697096566, 0.5504942982879162], [0.5961313181139556, 0.27305989621099225], [0.5017519166754497, 0.9007729290661471], [0.507169880769062, 0.32593696130187977], [0.974712622800124, 0.34823524543846773], [0.5248436404858957, 1.0209295282410686], [0.675159728655196, 0.3947264087165161], [0.861939712442929, 0.161883179361251], [0.022922343519210464, 0.6596134802930816], [0.1857666418052387, 0.25129777376971674], [0.2010634238445508, 0.7329709089777334], [0.015374234621821609, 0.31661401876764195], [0.4450904180633435, 0.3344852070798551], [0.7441374037759877, 0.511351473167448], [0.8494318405711682, 0.6596219845428711], [1.0160610811333888, -0.0676566824061181], [0.394054735187932, -0.08527012259827829], [0.08830274827868573, -0.0001398964191255403], [0.8678298318092996, 0.6304362806647535], [0.2545596337630509, 0.5385563128958529], [0.9436260349784321, 0.3325511926916691], [1.097596042629465, 0.438793880411267], [0.1424074370361118, 1.054170156181394], [-0.04849123921190071, 0.0375237898354884], [0.7587268000119125, -0.06125570940717005], [0.6187527536727718, 0.07354283461791819], [0.45909251511174054, 0.06318624430952957], [0.5990565546583069, 0.9177770275542246], [0.521971631889483, 0.21625441779343482], [0.8767036051844564, 0.3387727758983258], [0.9535989932449128, 0.41470000997541456], [0.3938739189617123, 0.13841606413363727], [0.1236626097900482, 1.0639589506294307], [0.8119644611406263, 0.5671050067469363], [1.0856098977598403, 0.6425890417125952], [-0.07268200267038401, 0.5935290260106546], [-0.07144584092229644, 0.7658271685441689], [0.22665820080473323, 0.5426618137345272], [0.24063808835864123, 0.031778801855602695], [0.6657475674946562, 0.02983223081773323], [0.2594796924519748, 0.7388411715218555], [0.32480715394244386, 0.5678293579019353], [0.764280073889626, 0.14091129000307226], [0.1132412765056538, -0.03879567880608939], [0.33315923686447035, 0.22683279041661022], [0.5277690090170868, 0.8319927959887584], [0.150770385689638, 0.7681770044707091], [0.15396854736454216, 0.3708289759594303], [0.6055652805083167, 0.4909340287850982], [1.0280649803840656, 0.753666964877647], [0.24802186024227504, 0.4656929857900801], [0.2540461576183395, 1.0255768366401672], [0.5680897293603371, 1.0334220630745385], [0.14988312043170787, 0.005421930458783336], [0.8626370008160046, 0.9977572850789599], [1.0338141952492785, 0.8773971246920462], [0.8144487679693452, 0.5128277832620468], [0.7622014808699031, 1.0365877374477575], [0.01570730976855582, -0.09640314179949111], [-0.08460314624632237, 0.8159736074798521], [0.6980656378423606, 0.3912318749243192], [0.703544515926918, 0.6022594886530971], [0.8406525764342054, 0.04627174320337918]]
-print(list([list(x) for x in r]))
+def get_regions_to_merge(ridge_v, regions):
+    merge_rs = list()
+    for r in regions:
+        if set(ridge_v).issubset(set(r)):
+            merge_rs.append(r)
+    return merge_rs
+
+r = get_random_points(STARTING_SUBVOLUME_NUMBER)
+#print(list([list(x) for x in r]))
 vor = Voronoi(r)
 
-vor.ridge_vertices = list(filter(lambda v: -1 not in v, vor.ridge_vertices))
+print(vor.ridge_vertices)
 
-voronoi_plot_2d(vor)
+fig = plt.figure()
+ax = fig.add_subplot(projection='3d')
+ax.set_xlim(0,1)
+ax.set_ylim(0,1)
+ax.set_zlim(0,1)
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.set_zlabel("z")
+
+ax.plot3D([ran[0] for ran in r], [ran[1] for ran in r], [ran[2] for ran in r], 'o')
+
+for rv in vor.ridge_vertices:
+    xs = list()
+    ys = list()
+    zs = list()
+    vs = list()
+    for v in rv:
+        vs.append(list(vor.vertices[v]))
+        xs.append(vor.vertices[v][0])
+        ys.append(vor.vertices[v][1])
+        zs.append(vor.vertices[v][2])
+        
+    print(vs)
+    ax.plot3D(xs,ys,zs)
 plt.show()
 
-merged = list()
-while len(merged) < 30:
-    r1 = random.choice(vor.regions)
-    if len(get_neighbors(r1, vor.regions)) == 0:
-        continue
-    r2 = random.choice(get_neighbors(r1, vor.regions))
-    merged_regions = (min(intersection(r1,r2)), max(intersection(r1,r2)))
-    if merged_regions in merged:
-        continue
-    merged.append(merged_regions)
-    vor.ridge_vertices.remove(list(merged_regions))
 
-def remove_unnecessary_edges(v_index, edges, vertices, c):
+# exclude infinite regions (-1) and sort ridge_vertices
+vor.ridge_vertices = list(filter(lambda v: -1 not in v, vor.ridge_vertices))
+for rv in vor.ridge_vertices:
+    rv.sort()
+for r in vor.regions:
+    r.sort()
+
+merged_regions = list()
+for _ in range(STARTING_SUBVOLUME_NUMBER - SUBVOLUME_NUMBER):
+    ridge_v = random.choice(vor.ridge_vertices)
+    vor.ridge_vertices.remove(ridge_v)
+    merged_regions.append(get_regions_to_merge(ridge_v, vor.regions))
+
+def remove_unnecessary_edges(v_index, edges, vertices):
     e = get_edges_of_vertex(v_index, vor.ridge_vertices)
-    if c != 0:
-        print(c)
     if len(e) == 1:
         edges.remove(e[0])
-        remove_unnecessary_edges(np.where(vertices == e[0][0]), edges, vertices, c+1)
-        remove_unnecessary_edges(np.where(vertices == e[0][1]), edges, vertices, c+2)
+        remove_unnecessary_edges(np.where(vertices == e[0][0]), edges, vertices)
+        remove_unnecessary_edges(np.where(vertices == e[0][1]), edges, vertices)
 
 
-#remove unnecessary edges (single edge on a vertice)
+#remove unnecessary ridges (single edge on a vertice)
 for i in range(len(vor.vertices)):
-    remove_unnecessary_edges(i, vor.ridge_vertices, vor.vertices,0)
+    remove_unnecessary_edges(i, vor.ridge_vertices, vor.vertices)
 
 
-voronoi_plot_2d(vor)
-plt.show()
