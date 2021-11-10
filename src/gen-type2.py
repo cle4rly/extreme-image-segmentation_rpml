@@ -8,8 +8,8 @@ from mpl_toolkits import mplot3d
 
 
 SUBVOLUME_NUMBER = 8               # m
-STARTING_SUBVOLUME_NUMBER = 5     # n >> m
-UNIT_CUBE_MARGIN = 0.1              # area to place random voronoi tessellation points
+STARTING_SUBVOLUME_NUMBER = 5      # n >> m
+UNIT_CUBE_MARGIN = 0.1             # area to place random voronoi tessellation points
 
 
 def get_random_points(number):
