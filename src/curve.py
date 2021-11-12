@@ -27,13 +27,23 @@ class Point:
     def get_value(self):
         return [self.x, self.y, self.z]
     
+    def get_pixel_value(self, resolution):
+        values = list()
+        for v in [self.x, self.y, self.z]:
+            rounding_up = 0
+            if v % (1/resolution) >= 1 / (resolution*2):
+                rounding_up = 1
+            values.append(round(v - v % (1/resolution) + rounding_up * (1/resolution), 10))
+        return values
+
     def in_unit_cube(self):
         return 0<=self.x<=1 and 0<=self.y<=1 and 0<=self.z<=1
 
 
 class Curve:
 
-    def __init__(self, min_points=3, max_points=6, min_values=10, resolution=500):
+    def __init__(self, resolution, min_points=3, max_points=6, min_values=10):
+        self.resolution = resolution
         self.interpolation_points = list()
         self.increasing_dim = random.choice(list(Dimension))
     
@@ -43,10 +53,10 @@ class Curve:
 
         self.interpolation_points.sort(key=lambda x:x[self.increasing_dim.value])
         self.min_values = min_values
-        self.values = self.get_values(resolution)
+        self.values = self.get_values()
         
-    def get_values(self, resolution):
-        step = 1/resolution
+    def get_values(self):
+        step = 1/self.resolution
         start_arg = self.interpolation_points[0][self.increasing_dim.value]
         end_arg = self.interpolation_points[-1][self.increasing_dim.value]
         arg_points = [p[self.increasing_dim.value] for p in self.interpolation_points]
@@ -79,15 +89,16 @@ class Curve:
         ranges.append(current_range)
         
         ranges.sort(key=lambda x: len(x))
-        return [c.get_value() for c in curve[ranges[-1][0]:ranges[-1][-1]]]
+        return [p.get_pixel_value(self.resolution) for p in curve[ranges[-1][0]:ranges[-1][-1]]]
 
     def too_short(self) -> bool:
         return len(self.values) < self.min_values
 
+    # more efficient possible
     def point_included(self, point) -> bool:
-        pass
+        return point.get_value() in self.values
 
-    def plot(self, resolution):
+    def plot(self):
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
         

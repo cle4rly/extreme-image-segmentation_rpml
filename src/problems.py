@@ -1,17 +1,18 @@
 
 import math
 import numpy as np
-from curve import Curve
+from curve import Curve, Point
 import matplotlib.pyplot as plt
+from PIL import Image
+
+import time
 
 
 class Problem:
 
-    def __init__(self, object_number):
+    def __init__(self, object_number, resolution):
         self.object_number = object_number
-
-    def initialize(self):
-        pass
+        self.resolution = resolution
 
     def plot(self):
         pass
@@ -19,16 +20,14 @@ class Problem:
 
 class Type1(Problem):
 
-    def __init__(self, object_number, distance):
-        super().__init__(object_number)
+    def __init__(self, object_number, distance, resolution=500):
+        super().__init__(object_number, resolution)
         self.distance = distance
         self.curves = list()
 
-        c=0
         while len(self.curves) < self.object_number:
-            print(f"{c} {len(self.curves)}")
-            c+=1
-            new_curve = Curve()
+            print(len(self.curves))
+            new_curve = Curve(self.resolution)
             if self.validate(new_curve):
                 self.curves.append(new_curve)
 
@@ -64,15 +63,39 @@ class Type1(Problem):
         ax.set_zlabel("z")
         plt.show()
 
+    def on_curve(self, point) -> bool:
+        for c in self.curves:
+            if c.point_included(point):
+                return True
+        return False
+
+    # x-column, y-image, z-row
+    def to_image(self, image_number):
+        array = np.zeros((self.resolution, self.resolution))
+        for c in self.curves:
+            for p in c.values:
+                if p[1] == image_number/self.resolution:
+                    array[int(p[0]*self.resolution)][int(p[2]*self.resolution)] = 255
+
+        return Image.fromarray(np.asarray(array))
+
+    def save_image_stack(self, location):
+        for i in range(self.resolution):
+            print(i)
+            img = self.to_image(i)
+            img = img.convert("L")
+            img.save(f"{location}/image{i}.png")
 
 class Type2(Problem):
 
-    def __init__(self, object_number):
-        super().__init__(object_number)
+    def __init__(self, object_number, resolution=500):
+        super().__init__(object_number, resolution)
 
 
 
 
-p1 = Type1(15, 0.05)
+p1 = Type1(5, 0.05)
 p1.plot()
 print(p1.object_number)
+p1.save_image_stack("data/curves1")
+print("done")
