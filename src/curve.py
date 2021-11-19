@@ -4,6 +4,7 @@ from enum import Enum
 import numpy as np
 from scipy.interpolate import CubicSpline
 import matplotlib.pyplot as plt
+import itertools
 
 
 class Dimension(Enum):
@@ -36,8 +37,14 @@ class Point:
             values.append(round(v - v % (1/resolution) + rounding_up * (1/resolution), 10))
         return values
 
+    def round_to_pixel(self, resolution):
+        values = self.get_pixel_value(resolution)
+        self.x = values[0]
+        self.y = values[1]
+        self.z = values[2]
+
     def in_unit_cube(self):
-        return 0<=self.x<=1 and 0<=self.y<=1 and 0<=self.z<=1
+        return 0<=self.x<1 and 0<=self.y<1 and 0<=self.z<1
 
 
 class Curve:
@@ -54,6 +61,7 @@ class Curve:
         self.interpolation_points.sort(key=lambda x:x[self.increasing_dim.value])
         self.min_values = min_values
         self.values = self.get_values()
+        self.neighbour_pixels = None
         
     def get_values(self):
         step = 1/self.resolution
@@ -78,6 +86,7 @@ class Curve:
         ranges = list()
         current_range = list()
         for i in range(len(curve)):
+            curve[i].round_to_pixel(self.resolution)
             if not curve[i].in_unit_cube():
                 if len(current_range) == 0:
                     continue
@@ -89,7 +98,7 @@ class Curve:
         ranges.append(current_range)
         
         ranges.sort(key=lambda x: len(x))
-        return [p.get_pixel_value(self.resolution) for p in curve[ranges[-1][0]:ranges[-1][-1]]]
+        return [p.get_value() for p in curve[ranges[-1][0]:ranges[-1][-1]]]
 
     def too_short(self) -> bool:
         return len(self.values) < self.min_values
@@ -97,6 +106,32 @@ class Curve:
     # more efficient possible
     def point_included(self, point) -> bool:
         return point.get_value() in self.values
+
+    def get_neighbour_pixels(self, pixel, distance):
+        step = 1/self.resolution
+        max_pixel_offset = round(distance/step)
+        offset_per_dim = [x for x in range(-max_pixel_offset, max_pixel_offset+1)]
+
+        offset = list()
+        for off in list(itertools.product(offset_per_dim,repeat=2)):
+            new_p = [0] * 3
+            new_p[(self.increasing_dim.value+1) % 3] = off[0] * step
+            new_p[(self.increasing_dim.value+2) % 3] = off[1] * step
+            if np.linalg.norm(np.array(new_p)) <= distance:
+                offset.append(off)
+
+        neighbours = set()
+        for off in offset:
+            n = pixel.copy()
+            n[(self.increasing_dim.value+1) % 3] += off[0] * step
+            n[(self.increasing_dim.value+2) % 3] += off[1] * step
+            n = Point(n[0], n[1], n[2])
+            if n.in_unit_cube() and pixel != n.get_pixel_value(self.resolution):
+                neighbours.add(tuple(n.get_pixel_value(self.resolution)))
+
+        neighbours = list(map(lambda x: list(x), neighbours))
+        return neighbours
+
 
     def plot(self):
         fig = plt.figure()
