@@ -2,6 +2,7 @@ from os import sep
 import random
 from enum import Enum
 import numpy as np
+from numpy.core.numerictypes import obj2sctype
 from scipy.interpolate import CubicSpline
 import matplotlib.pyplot as plt
 import itertools
@@ -25,6 +26,18 @@ class Point:
         if z is None:
             self.z = random.random()
 
+    def __str__(self) -> str:
+        return f"({self.x}, {self.y}, {self.z})"
+    
+    def __repr__(self):
+        return str(self)
+
+    def __eq__(self, __o: object) -> bool:
+        return self.x == __o.x and self.y == __o.y and self.z == __o.z
+    
+    def __hash__(self) -> int:
+        return hash(repr(self))
+
     def get_value(self):
         return [self.x, self.y, self.z]
     
@@ -46,6 +59,12 @@ class Point:
     def in_unit_cube(self):
         return 0<=self.x<1 and 0<=self.y<1 and 0<=self.z<1
 
+    def get_shifted_points(self, offsets):
+        shifted = list()
+        for off in offsets:
+            shifted.append(Point(self.x+off[0], self.y+off[1], self.z+off[2]))
+        return shifted
+
 
 class Curve:
 
@@ -61,6 +80,7 @@ class Curve:
         self.interpolation_points.sort(key=lambda x:x[self.increasing_dim.value])
         self.min_values = min_values
         self.values = self.get_values()
+        self.offset = None
         self.neighbour_pixels = None
         
     def get_values(self):
@@ -68,7 +88,7 @@ class Curve:
         start_arg = self.interpolation_points[0][self.increasing_dim.value]
         end_arg = self.interpolation_points[-1][self.increasing_dim.value]
         arg_points = [p[self.increasing_dim.value] for p in self.interpolation_points]
-        arguments = np.arange(start_arg, end_arg, step)
+        arguments = np.arange(start_arg, end_arg, step/2)
 
         value_dim1 = (self.increasing_dim.value + 1) % 3
         value_dim2 = (self.increasing_dim.value + 2) % 3
@@ -107,30 +127,44 @@ class Curve:
     def point_included(self, point) -> bool:
         return point.get_value() in self.values
 
-    def get_neighbour_pixels(self, pixel, distance):
-        step = 1/self.resolution
-        max_pixel_offset = round(distance/step)
-        offset_per_dim = [x for x in range(-max_pixel_offset, max_pixel_offset+1)]
+    def get_offsets(self, distance):
+        if not self.offset:
+            step = 1/self.resolution
+            max_pixel_offset = round(distance/step)
+            positive_offset = list()
+            for x in range(max_pixel_offset+1):
+                for y in range(max_pixel_offset+1):
+                    for z in range(max_pixel_offset+1):
+                        if np.linalg.norm(np.array([x*step,y*step,z*step])) <= distance:
+                            positive_offset.append((x*step,y*step,z*step))
+                        else:
+                            break
+            positive_offset.remove((0,0,0))
+            values = [-1,1]
+            cubes = list(itertools.product(values, repeat=3))
+            cubes.remove((1,1,1))
+            offset = set(positive_offset.copy())
+            for cube in cubes:
+                for off in positive_offset:
+                    offset.add((cube[0]*off[0], cube[1]*off[1], cube[2]*off[2]))
+            self.offset = [list(off) for off in list(offset)]
+        return self.offset
 
-        offset = list()
-        for off in list(itertools.product(offset_per_dim,repeat=2)):
-            new_p = [0] * 3
-            new_p[(self.increasing_dim.value+1) % 3] = off[0] * step
-            new_p[(self.increasing_dim.value+2) % 3] = off[1] * step
-            if np.linalg.norm(np.array(new_p)) <= distance:
-                offset.append(off)
-
-        neighbours = set()
-        for off in offset:
-            n = pixel.copy()
-            n[(self.increasing_dim.value+1) % 3] += off[0] * step
-            n[(self.increasing_dim.value+2) % 3] += off[1] * step
-            n = Point(n[0], n[1], n[2])
-            if n.in_unit_cube() and pixel != n.get_pixel_value(self.resolution):
-                neighbours.add(tuple(n.get_pixel_value(self.resolution)))
-
-        neighbours = list(map(lambda x: list(x), neighbours))
-        return neighbours
+    def get_neighbour_pixels(self, distance):
+        offsets = self.get_offsets(distance)
+        if not self.neighbour_pixels:
+            neighbours = set()
+            last_off = set()
+            for p in self.values:
+                current_off = set(Point(p[0],p[1],p[2]).get_shifted_points(offsets))
+                for n in current_off-last_off:
+                    n.round_to_pixel(self.resolution)
+                    if n.in_unit_cube() and p != n.get_pixel_value(self.resolution):
+                        neighbours.add(tuple(n.get_pixel_value(self.resolution)))
+                last_off = current_off.copy()
+            neighbours = list(map(lambda x: list(x), neighbours))
+            self.neighbour_pixels = neighbours
+        return self.neighbour_pixels
 
 
     def plot(self):
@@ -157,3 +191,9 @@ class Curve:
         ax.set_zlabel("z")
         plt.show()
 
+# c = Curve(500)
+# print(len(c.values))
+# print(len(c.get_neighbour_pixels(0.007)))
+
+
+# close spaces in splines (more values? -> relative)
