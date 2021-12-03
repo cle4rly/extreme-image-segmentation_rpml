@@ -1,17 +1,30 @@
 
 import math
 import numpy as np
+from numpy.core.records import array
 from curve import Curve, Point
 import matplotlib.pyplot as plt
 from PIL import Image
+from typing import List
+
+
+class ImageObj:
+
+    def __init__(self, resolution, values) -> None:
+        self.resolution = resolution
+        self.values: List[List[List[int]]] = values
+
+    def get_intensity(self, point):
+        return self.values[point[0]*self.resolution][point[1]*self.resolution][point[2]*self.resolution]    #change!!!
 
 
 class Problem:
 
-    def __init__(self, object_number, resolution, sigma):
+    def __init__(self, object_number, resolution, sigma, sigma_near):
         self.object_number = object_number
         self.resolution = resolution
         self.sigma = sigma
+        self.sigma_near = sigma_near
 
     def plot(self):
         pass
@@ -19,8 +32,8 @@ class Problem:
 
 class Type1(Problem):
 
-    def __init__(self, object_number, distance, resolution=500, sigma=0.1):
-        super().__init__(object_number, resolution, sigma)
+    def __init__(self, object_number, distance, resolution=500, sigma=0.1, sigma_near=0.3):
+        super().__init__(object_number, resolution, sigma, sigma_near)
         self.distance = distance
         self.curves = list()
 
@@ -79,26 +92,39 @@ class Type1(Problem):
                     return d
         return d
 
-    # x-column, y-image, z-row
+    # y-column, x-image, z-row
     def to_image(self, image_number):
         array = np.zeros((self.resolution, self.resolution))
+        gaussian = 100 + np.random.normal(0, self.sigma_near, (self.resolution, self.resolution)) * 255
         print(f"{image_number}")
         for c in self.curves:
-            for n in c.get_neighbour_pixels(self.distance):
+            for n in c.get_neighbor_pixels(self.distance):
                 if n[0] == image_number/self.resolution:
-                    array[int(n[1]*self.resolution)][int(n[2]*self.resolution)] = 50
+                    y = int(n[1]*self.resolution)
+                    z = int(n[2]*self.resolution)
+                    array[y][z] = gaussian[y][z]
             for p in c.values:
                 if p[0] == image_number/self.resolution:
                     array[int(p[1]*self.resolution)][int(p[2]*self.resolution)] = 255
 
         return np.asarray(array)
 
+    def add_noise(self, img):
+        gaussian = abs(np.random.normal(0, self.sigma, (self.resolution, self.resolution))) * 255
+        return img + gaussian
+
+    def get_image_object(self):
+        array = [0] * self.resolution
+        for i in range(self.resolution):
+            image = self.add_noise(self.to_image(i))
+            array[i] = [list(img) for img in image]
+        return ImageObj(self.resolution, array)
+
+    # not same as img obj (random noise)
     def save_image_stack(self, location):
         for i in range(self.resolution):
             img = self.to_image(i)
-            gaussian = np.random.normal(0, self.sigma, (self.resolution, self.resolution)) * 255
-            noisy_img = img + gaussian
-            noisy_img = Image.fromarray(noisy_img)
+            noisy_img = Image.fromarray(self.add_noise(img))
             noisy_img = noisy_img.convert("L")
             noisy_img.save(f"{location}/image{i}.png")
 
@@ -111,8 +137,8 @@ class Type2(Problem):
 
 
 
-p1 = Type1(15, 0.015)
-p1.plot()
-print(p1.object_number)
-p1.save_image_stack("data/curves10")
-print("done")
+# p1 = Type1(5, 0.005)
+# p1.plot()
+# print(p1.object_number)
+# p1.save_image_stack("data/curves15")
+# print("done")

@@ -1,6 +1,7 @@
 from os import sep
 import random
 from enum import Enum
+from PIL.Image import new
 import numpy as np
 from numpy.core.numerictypes import obj2sctype
 from scipy.interpolate import CubicSpline
@@ -15,35 +16,35 @@ class Dimension(Enum):
 
 
 class Point:
-    def __init__(self, x=None, y=None, z=None) -> None:
-        self.x = x
-        self.y = y
-        self.z = z
-        if x is None:
-            self.x = random.random()
-        if y is None:
-            self.y = random.random()
-        if z is None:
-            self.z = random.random()
+    def __init__(self, value=None) -> None:
+        self.value = [0]*3
+        if not value:
+            self.value = [random.random(), random.random(), random.random()]
+            return
+        for i in range(3):
+            if value[i]:
+                self.value[i] = value[i]
+            else:
+                self.value[i] = random.random()
 
     def __str__(self) -> str:
-        return f"({self.x}, {self.y}, {self.z})"
+        return str(self.value)
     
     def __repr__(self):
         return str(self)
 
     def __eq__(self, __o: object) -> bool:
-        return self.x == __o.x and self.y == __o.y and self.z == __o.z
+        return self.value == __o.value
     
     def __hash__(self) -> int:
         return hash(repr(self))
 
-    def get_value(self):
-        return [self.x, self.y, self.z]
+    def copy(self):
+        return Point(self.value)
     
     def get_pixel_value(self, resolution):
         values = list()
-        for v in [self.x, self.y, self.z]:
+        for v in self.value:
             rounding_up = 0
             if v % (1/resolution) >= 1 / (resolution*2):
                 rounding_up = 1
@@ -51,19 +52,50 @@ class Point:
         return values
 
     def round_to_pixel(self, resolution):
-        values = self.get_pixel_value(resolution)
-        self.x = values[0]
-        self.y = values[1]
-        self.z = values[2]
+        self.value = self.get_pixel_value(resolution)
 
     def in_unit_cube(self):
-        return 0<=self.x<1 and 0<=self.y<1 and 0<=self.z<1
+        for v in self.value:
+            if 0 > v or 1 <= v:
+                return False
+        return True
 
     def get_shifted_points(self, offsets):
         shifted = list()
         for off in offsets:
-            shifted.append(Point(self.x+off[0], self.y+off[1], self.z+off[2]))
+            shifted.append(Point((self.value[0]+off[0], self.value[1]+off[1], self.value[2]+off[2])))
         return shifted
+
+    def get_6connected_nbhood(self, resolution):
+        nbh = list()
+        for dim, dir in itertools.product(Dimension, {-1,1}):
+            new_p = self.copy()
+            new_p.value[dim.value] += dir*resolution
+            if new_p.in_unit_cube():
+                nbh.append(new_p)
+        return nbh
+
+    def get_18connected_nbhood(self, resolution):
+        nbh = self.get_6connected_nbhood(resolution)
+        for dim in Dimension:
+            for dir1, dir2 in itertools.product({-1,1}, repeat=2):
+                new_p = self.copy()
+                new_p.value[dim.value] += dir1 * resolution
+                new_p.value[(dim.value+1)%3] += dir2 * resolution
+                if new_p.in_unit_cube():
+                    nbh.append(new_p)
+        return nbh
+
+    def get_26connected_nbhood(self, resolution):
+        nbh = self.get_18connected_nbhood(resolution)
+        for dir1, dir2, dir3 in itertools.product({-1,1}, repeat=3):
+            new_p = self.copy()
+            new_p.value[0] += dir1 * resolution
+            new_p.value[1] += dir2 * resolution
+            new_p.value[2] += dir3 * resolution
+            if new_p.in_unit_cube():
+                nbh.append(new_p)
+        return nbh
 
 
 class Curve:
@@ -75,32 +107,33 @@ class Curve:
     
         point_num = random.randint(min_points, max_points)
         for _ in range(point_num):
-            self.interpolation_points.append(Point().get_value())
+            self.interpolation_points.append(Point().value)
 
         self.interpolation_points.sort(key=lambda x:x[self.increasing_dim.value])
         self.min_values = min_values
         self.values = self.get_values()
         self.offset = None
-        self.neighbour_pixels = None
+        self.neighbor_pixels = None
         
     def get_values(self):
         step = 1/self.resolution
         start_arg = self.interpolation_points[0][self.increasing_dim.value]
         end_arg = self.interpolation_points[-1][self.increasing_dim.value]
         arg_points = [p[self.increasing_dim.value] for p in self.interpolation_points]
-        arguments = np.arange(start_arg, end_arg, step/2)
+        arguments = np.arange(start_arg, end_arg, step/4)
 
         value_dim1 = (self.increasing_dim.value + 1) % 3
         value_dim2 = (self.increasing_dim.value + 2) % 3
         spline_value1 = CubicSpline(arg_points, [p[value_dim1] for p in self.interpolation_points])
         spline_value2 = CubicSpline(arg_points, [p[value_dim2] for p in self.interpolation_points])
 
-        if self.increasing_dim == Dimension.X:
-            curve = [Point(x, float(spline_value1(x)), float(spline_value2(x))) for x in arguments]
-        elif self.increasing_dim == Dimension.Y:
-            curve = [Point(float(spline_value2(y)), y, float(spline_value1(y))) for y in arguments]
-        elif self.increasing_dim == Dimension.Z:
-            curve = [Point(float(spline_value1(z)), float(spline_value2(z)), z) for z in arguments]
+        curve = list()
+        for arg in arguments:
+            new_p = Point()
+            new_p.value[self.increasing_dim.value] = arg
+            new_p.value[value_dim1] = float(spline_value1(arg))
+            new_p.value[value_dim2] = float(spline_value2(arg))
+            curve.append(new_p)
 
         # use only part of spline inside unit cube, when spline intersects unit cube multiple times, choose one at random
         ranges = list()
@@ -118,14 +151,13 @@ class Curve:
         ranges.append(current_range)
         
         ranges.sort(key=lambda x: len(x))
-        return [p.get_value() for p in curve[ranges[-1][0]:ranges[-1][-1]]]
+        return [p.value for p in curve[ranges[-1][0]:ranges[-1][-1]]]
 
     def too_short(self) -> bool:
         return len(self.values) < self.min_values
 
-    # more efficient possible
     def point_included(self, point) -> bool:
-        return point.get_value() in self.values
+        return point.value in self.values
 
     def get_offsets(self, distance):
         if not self.offset:
@@ -150,21 +182,20 @@ class Curve:
             self.offset = [list(off) for off in list(offset)]
         return self.offset
 
-    def get_neighbour_pixels(self, distance):
+    def get_neighbor_pixels(self, distance):
         offsets = self.get_offsets(distance)
-        if not self.neighbour_pixels:
-            neighbours = set()
+        if not self.neighbor_pixels:
+            neighbors = set()
             last_off = set()
             for p in self.values:
-                current_off = set(Point(p[0],p[1],p[2]).get_shifted_points(offsets))
+                current_off = set(Point(p).get_shifted_points(offsets))
                 for n in current_off-last_off:
                     n.round_to_pixel(self.resolution)
                     if n.in_unit_cube() and p != n.get_pixel_value(self.resolution):
-                        neighbours.add(tuple(n.get_pixel_value(self.resolution)))
+                        neighbors.add(tuple(n.get_pixel_value(self.resolution)))
                 last_off = current_off.copy()
-            neighbours = list(map(lambda x: list(x), neighbours))
-            self.neighbour_pixels = neighbours
-        return self.neighbour_pixels
+            self.neighbor_pixels = list(map(lambda x: list(x), neighbors))
+        return self.neighbor_pixels
 
 
     def plot(self):
@@ -193,7 +224,8 @@ class Curve:
 
 # c = Curve(500)
 # print(len(c.values))
-# print(len(c.get_neighbour_pixels(0.007)))
+# print(len(c.get_neighbor_pixels(0.007)))
 
 
 # close spaces in splines (more values? -> relative)
+# calc dist random points as reference
