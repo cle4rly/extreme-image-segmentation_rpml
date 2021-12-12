@@ -1,7 +1,4 @@
-
-import math
 import numpy as np
-from numpy.core.records import array
 from curve import Curve, Point
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -47,7 +44,7 @@ class Type1(Problem):
         for c in self.curves:
             for p1 in c.values:
                 for p2 in curve.values:
-                    if np.linalg.norm(np.array(p1) - np.array(p2)) < self.distance:
+                    if np.linalg.norm(np.array(p1.value) - np.array(p2.value)) < self.distance:
                         return True
         return False
     
@@ -61,9 +58,9 @@ class Type1(Problem):
         ax = fig.add_subplot(projection='3d')
 
         for c in self.curves:
-            xs = [p[0] for p in c.values]
-            ys = [p[1] for p in c.values]
-            zs = [p[2] for p in c.values]
+            xs = [p.value[0] for p in c.values]
+            ys = [p.value[1] for p in c.values]
+            zs = [p.value[2] for p in c.values]
             ax.plot3D(xs, ys, zs)
 
         ax.set_title('type 1')
@@ -81,17 +78,6 @@ class Type1(Problem):
                 return True
         return False
 
-    def curve_distance(self, point):
-        d = math.sqrt(3)    # max dist in unit cube
-        for c in self.curves:
-            for p in c.values:
-                new_d = np.linalg.norm(np.array(p) - np.array(point))
-                if new_d < d:
-                    d = new_d
-                if d == 0:
-                    return d
-        return d
-
     # y-column, x-image, z-row
     def to_image(self, image_number):
         array = np.zeros((self.resolution, self.resolution))
@@ -104,8 +90,8 @@ class Type1(Problem):
                     z = int(n[2]*self.resolution)
                     array[y][z] = gaussian[y][z]
             for p in c.values:
-                if p[0] == image_number/self.resolution:
-                    array[int(p[1]*self.resolution)][int(p[2]*self.resolution)] = 255
+                if p.value[0] == image_number/self.resolution:
+                    array[int(p.value[1]*self.resolution)][int(p.value[2]*self.resolution)] = 255
 
         return np.asarray(array)
 
@@ -137,8 +123,8 @@ class Type2(Problem):
 
 
 
-# p1 = Type1(5, 0.005)
-# p1.plot()
-# print(p1.object_number)
-# p1.save_image_stack("data/curves15")
-# print("done")
+p1 = Type1(5, 0.01)
+p1.plot()
+print(p1.object_number)
+p1.save_image_stack("data/curves15")
+print("done")
