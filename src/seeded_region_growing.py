@@ -1,6 +1,6 @@
 import random
-from curve import Point
-from problems import ImageObj, Type1, Image
+from problems import ImageObj, Type1
+from objects3d import Point
 
 
 class Region:
@@ -49,17 +49,19 @@ class SeededRegionGrowing:
             y = random.randint(0, self.image.resolution-1)
             rand_row = self.image.values[x][y]
             z = rand_row.index(max(rand_row))
-            seeds.append(self.image.get_intensity([x,y,z]))
+            seed = Point([x/self.image.resolution, y/self.image.resolution, z/self.image.resolution])
+            seed.round_to_pixel(self.image.resolution)
+            seeds.append(seed)
         return seeds
 
-    def expand_regions(self, region_index):
+    def expand_regions(self):
         changed = True
         while changed:
             changed = False
-            for r in self.regions[region_index]:
+            for r in self.regions:
                 new_pixel = set()
                 new_intensities = list()
-                for p in r.get_new_neighbors(self.img.resolution):
+                for p in r.get_new_neighbors(self.image.resolution):
                     intensity = self.image.get_intensity(p)
                     if abs(intensity - r.medium_intensity) < self.intensity_threshold:
                         new_pixel.add(p)
@@ -68,13 +70,22 @@ class SeededRegionGrowing:
                     new_medium = sum(new_pixel) / len(new_pixel)
                     r.expand(new_pixel, new_medium)
                     changed = True
-            print(f"r: {self.regions}")
 
 
 p1 = Type1(5, 0.005)
 img = p1.get_image_object()
 srg = SeededRegionGrowing(img)
-print(srg.regions)      
+for r in srg.regions:
+    print(r.border_pixel)
+    print(r.inner_border_pixel)
+    print(r.inner_pixel)
+    print()
+srg.expand_regions()
+for r in srg.regions:
+    print(r.border_pixel)
+    print(r.inner_border_pixel)
+    print(r.inner_pixel)
+    print()
 
 
 # resolution aus pixel raus (liber nur index)
