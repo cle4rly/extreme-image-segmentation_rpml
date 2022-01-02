@@ -185,7 +185,7 @@ class Curve:
         return len(self.values) < self.min_values
 
     def point_included(self, point) -> bool:
-        return point.value in self.values
+        return point in self.values
 
     def get_offsets(self, distance):
         if not self.offset:
