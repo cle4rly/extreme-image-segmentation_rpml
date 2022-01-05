@@ -111,7 +111,7 @@ class Plain:
 
 class Curve:
 
-    def __init__(self, resolution, min_points=3, max_points=6, min_values=10):
+    def __init__(self, resolution, min_points=3, max_points=6, min_values=3):
         self.resolution = resolution
         self.interpolation_points = list()
         self.increasing_dim = random.choice(list(Dimension))
@@ -124,7 +124,9 @@ class Curve:
             key=lambda x: x[self.increasing_dim.value])
         self.min_values = min_values
         self.values = self.calc_all_values()
-        self.values = self.calc_unit_cube_values(self.estimate_length())
+        length = self.estimate_length()
+        if length:
+            self.values = self.calc_unit_cube_values(length)
         self.offset = None
         self.neighbor_pixels = None
 

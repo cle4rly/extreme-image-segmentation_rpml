@@ -1,10 +1,12 @@
+from os import times
 import numpy as np
+from numpy.core.fromnumeric import partition
 from objects3d import Curve, Point, Plain
 import matplotlib.pyplot as plt
 from PIL import Image
 from typing import List
 from scipy.spatial import Voronoi
-from statistics import mean
+import time
 import itertools
 
 
@@ -15,7 +17,6 @@ class ImageObj:
         self.values: List[List[List[int]]] = values
 
     def get_intensity(self, point: Point):
-        print(point)
         return self.values[int(point.value[0]*self.resolution)][int(point.value[1]*self.resolution)][int(point.value[2]*self.resolution)]    #change!!!
 
 
@@ -37,6 +38,7 @@ class Type1(Problem):
         super().__init__(object_number, resolution, sigma, sigma_near)
         self.distance = distance
         self.curves = list()
+        self.matrix = np.zeros((self.resolution, self.resolution, self.resolution))
 
         while len(self.curves) < self.object_number:
             print(len(self.curves))
@@ -123,14 +125,58 @@ class Type1(Problem):
             noisy_img = noisy_img.convert("L")
             noisy_img.save(f"{location}/image{i}.png")
 
+    def save_image_stack2(self, location):
+        i = 0
+        for row in self.matrix:
+            img = Image.fromarray(row.astype('uint8'))
+            img = img.convert("L")
+            img.save(f"{location}/image{i}.png")
+            i += 1
+
+    def save_cube(self):
+        white = 255
+        done = set()
+        next_pixel = [[]]
+        for curve in self.curves:
+            next_pixel[0].extend(curve.values)
+        next_pixel[0] = set(next_pixel[0])
+        print(f"len of values {len(next_pixel[0])}")
+        dist = 0
+        while len(next_pixel):
+            current_pixel_set = next_pixel.pop()
+            next_pixel_set = set()
+            print(f"dist {dist}")
+            for pixel in current_pixel_set:
+                x = int(round(pixel.value[0] * self.resolution))
+                y = int(round(pixel.value[1] * self.resolution))
+                z = int(round(pixel.value[2] * self.resolution))
+                self.matrix[x][y][z] = round(white - dist)
+                if white-dist < 0:
+                    print(f"negative {white} - {dist}")
+                    print(f"{x} {y} {z}")
+                # if x == 29 or x == 58:
+                #     print(f"seltsam {white} - {dist}")
+                #     print(f"{x} {y} {z}")
+                done.add(pixel)
+                for n in pixel.get_18connected_nbhood(self.resolution):
+                    nx = int(round(n.value[0] * self.resolution))
+                    ny = int(round(n.value[1] * self.resolution))
+                    nz = int(round(n.value[2] * self.resolution))
+                    if not self.matrix[nx][ny][nz] and n not in current_pixel_set:
+                        next_pixel_set.add(n)
+            if next_pixel_set:
+                next_pixel.append(next_pixel_set)
+            dist += (white/self.resolution)*2
+        print(self.matrix)
 
 
-p1 = Type1(3, 0.01)
-print(p1.get_curve_distance(Point([0.5,0.5,0.5])))
+p1 = Type1(13, 0.01, 100)
+t1 = time.time()
+p1.save_cube()
+t2 = time.time()
+print(f"time {t2-t1}")
+p1.save_image_stack2("data/test5")
 p1.plot()
-print(p1.object_number)
-p1.save_image_stack("data/curves20")
-print("done")
 
 # fig = plt.figure()
 # ax = fig.add_subplot(projection='3d')
@@ -147,3 +193,8 @@ print("done")
 
 
 # plt.show()
+
+
+
+# schauen ob nicht null statt schon benutzt set
+# nur äußerste speicehenr
