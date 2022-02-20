@@ -1,13 +1,11 @@
-from os import times
 import numpy as np
-from numpy.core.fromnumeric import partition
-from objects3d import Curve, Point, Plain
+from numpy.core.fromnumeric import mean
+from objects3d import Curve, Point
 import matplotlib.pyplot as plt
 from PIL import Image
 from typing import List
-from scipy.spatial import Voronoi
 import time
-import itertools
+import multiprocessing as mp
 
 
 class ImageObj:
@@ -39,12 +37,27 @@ class Type1(Problem):
         self.distance = distance
         self.curves = list()
         self.matrix = np.zeros((self.resolution, self.resolution, self.resolution))
+        self.res_values = np.array([v/self.resolution for v in range(self.resolution)])
 
         while len(self.curves) < self.object_number:
             print(len(self.curves))
             new_curve = Curve(self.resolution)
             if self.validate(new_curve):
                 self.curves.append(new_curve)
+        
+        file = open("data/values13", "w")
+
+        self.curve_points = list()
+        for curve in self.curves:
+            file.write(str(curve.values)+"\n\n")
+            self.curve_points.extend(curve.values)
+        print(self.curve_points)
+        print(len(self.curve_points))
+
+        file.close()
+
+        self.gaussian_near = 100 + np.random.normal(0, self.sigma_near, (self.resolution, self.resolution)) * 255
+        self.gaussian_far = abs(np.random.normal(0, self.sigma, (self.resolution, self.resolution))) * 255
 
     def too_close(self, curve):
         for c in self.curves:
@@ -84,12 +97,12 @@ class Type1(Problem):
         ax.set_zlabel("z")
         plt.show()
 
-    def get_curve_distance(self, point):
+    def get_curve_distance2(self, point):
+        print(f"poi {point}")
         next_points = [point]
         checked = set()
         while len(next_points):
             p = next_points.pop()
-            print(len(next_points))
             if self.point_on_curve(p):
                 return np.linalg.norm(np.array(p.value) - np.array(point.value))
             for n in p.get_6connected_nbhood(self.resolution):
@@ -97,18 +110,40 @@ class Type1(Problem):
                     next_points.append(n)
             checked.add(p)
 
+    def get_curve_distance3(self, point):
+        dist = np.float(1.73)
+        for val in self.curve_points:
+            new_dist = round(np.linalg.norm(np.array(point) - np.array(val)),2)
+            if new_dist == 0:
+                return 0
+            if new_dist < dist:
+                dist = new_dist
+        return dist
+    
+    def get_curve_distance(self, point):
+        dist = 1.73
+        for curve in self.curves:
+            for val in curve.values:
+                new_dist = round(np.linalg.norm(np.array(point.value) - np.array(val.value)),2)
+                if new_dist < dist:
+                    dist = new_dist
+                if new_dist == 0:
+                    return 0
+        return dist
+
     # y-column, x-image, z-row
     def to_image(self, image_number):
-        array = np.zeros((self.resolution, self.resolution))
-        gaussian_near = 100 + np.random.normal(0, self.sigma_near, (self.resolution, self.resolution)) * 255
-        gaussian_far = abs(np.random.normal(0, self.sigma, (self.resolution, self.resolution))) * 255
-        values = [v/self.resolution for v in range(self.resolution)]
-        values = [Point(v) for v in values]
-        vecdist = np.vectorize(self.get_curve_distance)
+        array = list()
+        pool = mp.Pool(mp.cpu_count())
+        x_value = image_number/self.resolution
+        for y in range(self.resolution):
+            pixel = [[x_value, y/self.resolution, z_value] for z_value in self.res_values]
+            dists = pool.map(self.get_curve_distance3, pixel)
+            array.append([round((255-(d*255))/2) for d in dists])
+
         print(f"{image_number}")
-        pixel = [p for p in itertools.product(values, repeat=2)]
-        array = vecdist(pixel)
-        return np.asarray(array)
+        pool.close()
+        return Image.fromarray(np.uint8(array), 'L')
 
     def get_image_object(self):
         array = [0] * self.resolution
@@ -119,63 +154,20 @@ class Type1(Problem):
 
     # not same as img obj (random noise)
     def save_image_stack(self, location):
+        times = list()
         for i in range(self.resolution):
+            t1 = time.time()
             img = self.to_image(i)
-            noisy_img = Image.fromarray(self.add_noise(img))
-            noisy_img = noisy_img.convert("L")
-            noisy_img.save(f"{location}/image{i}.png")
-
-    def save_image_stack2(self, location):
-        i = 0
-        for row in self.matrix:
-            img = Image.fromarray(row.astype('uint8'))
-            img = img.convert("L")
+            t2 = time.time()
+            times.append(t2-t1)
+            print(t2-t1)
+            print(f"new mean: {mean(times)}")
             img.save(f"{location}/image{i}.png")
-            i += 1
-
-    def save_cube(self):
-        white = 255
-        done = set()
-        next_pixel = [[]]
-        for curve in self.curves:
-            next_pixel[0].extend(curve.values)
-        next_pixel[0] = set(next_pixel[0])
-        print(f"len of values {len(next_pixel[0])}")
-        dist = 0
-        while len(next_pixel):
-            current_pixel_set = next_pixel.pop()
-            next_pixel_set = set()
-            print(f"dist {dist}")
-            for pixel in current_pixel_set:
-                x = int(round(pixel.value[0] * self.resolution))
-                y = int(round(pixel.value[1] * self.resolution))
-                z = int(round(pixel.value[2] * self.resolution))
-                self.matrix[x][y][z] = round(white - dist)
-                if white-dist < 0:
-                    print(f"negative {white} - {dist}")
-                    print(f"{x} {y} {z}")
-                # if x == 29 or x == 58:
-                #     print(f"seltsam {white} - {dist}")
-                #     print(f"{x} {y} {z}")
-                done.add(pixel)
-                for n in pixel.get_18connected_nbhood(self.resolution):
-                    nx = int(round(n.value[0] * self.resolution))
-                    ny = int(round(n.value[1] * self.resolution))
-                    nz = int(round(n.value[2] * self.resolution))
-                    if not self.matrix[nx][ny][nz] and n not in current_pixel_set:
-                        next_pixel_set.add(n)
-            if next_pixel_set:
-                next_pixel.append(next_pixel_set)
-            dist += (white/self.resolution)*2
-        print(self.matrix)
 
 
-p1 = Type1(13, 0.01, 100)
-t1 = time.time()
-p1.save_cube()
-t2 = time.time()
-print(f"time {t2-t1}")
-p1.save_image_stack2("data/test5")
+
+p1 = Type1(10, 0.02, 500)
+#p1.save_image_stack("data/curves21")
 p1.plot()
 
 # fig = plt.figure()

@@ -2,10 +2,12 @@ from os import sep
 import random
 from enum import Enum
 import numpy as np
+from numpy.lib.scimath import sqrt
 from scipy.interpolate import CubicSpline
 import matplotlib.pyplot as plt
 import itertools
 from typing import Tuple
+import statistics
 
 
 class Dimension(Enum):
@@ -52,6 +54,12 @@ class Point:
                 return False
         return True
 
+    def in_res_cube(self, resolution):
+        for v in self.value:
+            if 0 > v or resolution <= v:
+                return False
+        return True
+    
     def get_shifted_points(self, offsets):
         shifted = list()
         for off in offsets:
@@ -69,6 +77,15 @@ class Point:
                 nbh.append(new_p)
         return nbh
 
+    def get_6connected_nbhood2(self, resolution):
+        nbh = list()
+        for dim, dir in itertools.product(Dimension, {-1, 1}):
+            new_p = self.copy()
+            new_p.value[dim.value] += dir
+            if new_p.in_res_cube(resolution):
+                nbh.append(new_p)
+        return nbh
+
     def get_18connected_nbhood(self, resolution):
         nbh = self.get_6connected_nbhood(resolution)
         for dim in Dimension:
@@ -78,6 +95,17 @@ class Point:
                 new_p.value[(dim.value+1) % 3] += dir2/resolution
                 new_p.round_to_pixel(resolution)
                 if new_p.in_unit_cube():
+                    nbh.append(new_p)
+        return nbh
+    
+    def get_18connected_nbhood2(self, resolution):
+        nbh = self.get_6connected_nbhood2(resolution)
+        for dim in Dimension:
+            for dir1, dir2 in itertools.product({-1, 1}, repeat=2):
+                new_p = self.copy()
+                new_p.value[dim.value] += dir1
+                new_p.value[(dim.value+1) % 3] += dir2
+                if new_p.in_res_cube(resolution):
                     nbh.append(new_p)
         return nbh
 
@@ -90,6 +118,17 @@ class Point:
             new_p.value[2] += dir3/resolution
             new_p.round_to_pixel(resolution)
             if new_p.in_unit_cube():
+                nbh.append(new_p)
+        return nbh
+    
+    def get_26connected_nbhood2(self, resolution):
+        nbh = self.get_18connected_nbhood2(resolution)
+        for dir1, dir2, dir3 in itertools.product({-1, 1}, repeat=3):
+            new_p = self.copy()
+            new_p.value[0] += dir1
+            new_p.value[1] += dir2
+            new_p.value[2] += dir3
+            if new_p.in_res_cube(resolution):
                 nbh.append(new_p)
         return nbh
 
@@ -111,7 +150,7 @@ class Plain:
 
 class Curve:
 
-    def __init__(self, resolution, min_points=3, max_points=6, min_values=3):
+    def __init__(self, resolution, min_points=3, max_points=6, min_values=5):
         self.resolution = resolution
         self.interpolation_points = list()
         self.increasing_dim = random.choice(list(Dimension))
@@ -124,7 +163,7 @@ class Curve:
             key=lambda x: x[self.increasing_dim.value])
         self.min_values = min_values
         self.values = self.calc_all_values()
-        length = self.estimate_length()
+        length = self.estimate_length()*4
         if length:
             self.values = self.calc_unit_cube_values(length)
         self.offset = None
@@ -153,12 +192,16 @@ class Curve:
             arg_points, [p[value_dim2] for p in self.interpolation_points])
 
         curve = list()
+        last_p = Point()
         for arg in arguments:
             new_p = Point()
             new_p.value[self.increasing_dim.value] = arg
             new_p.value[value_dim1] = float(spline_value1(arg))
             new_p.value[value_dim2] = float(spline_value2(arg))
-            curve.append(new_p)
+            new_p.round_to_pixel(self.resolution)
+            if new_p != last_p:
+                curve.append(new_p)
+                last_p = new_p
 
         return curve
 
@@ -169,7 +212,6 @@ class Curve:
         curve = self.calc_all_values(amount)
 
         for i in range(len(curve)):
-            curve[i].round_to_pixel(self.resolution)
             if not curve[i].in_unit_cube():
                 if len(current_range) == 0:
                     continue
@@ -252,6 +294,57 @@ class Curve:
         ax.set_ylabel("y")
         ax.set_zlabel("z")
         plt.show()
+
+
+class Region:
+
+    def __init__(self, num, seed_point, seed_intensity) -> None:
+        self.num = num
+        self.medium_intensity = seed_intensity
+        self.border_pixel = {seed_point}
+        self.size = 1
+
+    def copy(self):
+        r = Region(self.num, Point(), 0)
+        r.medium_intensity = self.medium_intensity
+        r.border_pixel = self.border_pixel.copy()
+        r.size = self.size
+        return r
+
+    def update_size(self):
+        self.size = len(self.border_pixel)
+    
+    def get_new_neighbors(self, resolution):
+        neighbors = set()
+        for p in self.border_pixel:
+            for n in p.get_6connected_nbhood2(resolution):
+                if n not in self.border_pixel:
+                    neighbors.add(n)
+        return neighbors
+
+    def expand(self, new_border_pixel, new_intensity):
+        # calc new medium
+        n_old = self.size
+        n_new = len(new_border_pixel)
+        n = n_old + n_new
+        self.medium_intensity = self.medium_intensity * n_old/n + new_intensity * n_new/n
+
+        # update
+        self.border_pixel = new_border_pixel
+        self.update_size()
+
+    
+    def merge(self, region):
+        # calc new medium
+        n_self = self.size
+        n_other = region.size
+        n = n_self + n_other
+        self.medium_intensity = self.medium_intensity * n_self/n + region.medium_intensity * n_other/n
+
+        # expand
+        self.border_pixel = self.border_pixel.union(region.border_pixel)
+        self.update_size()
+
 
 # c = Curve(500)
 # c.plot()
