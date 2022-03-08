@@ -163,7 +163,7 @@ class Curve:
             key=lambda x: x[self.increasing_dim.value])
         self.min_values = min_values
         self.values = self.calc_all_values()
-        length = self.estimate_length()*4
+        length = self.estimate_length()*10
         if length:
             self.values = self.calc_unit_cube_values(length)
         self.offset = None
@@ -301,39 +301,45 @@ class Region:
     def __init__(self, num, seed_point, seed_intensity) -> None:
         self.num = num
         self.medium_intensity = seed_intensity
-        self.border_pixel = {seed_point}
+        self.pixel = {seed_point}
         self.size = 1
 
     def copy(self):
         r = Region(self.num, Point(), 0)
         r.medium_intensity = self.medium_intensity
-        r.border_pixel = self.border_pixel.copy()
+        r.pixel = self.pixel.copy()
         r.size = self.size
         return r
 
     def update_size(self):
-        self.size = len(self.border_pixel)
+        self.size = len(self.pixel)
     
     def get_new_neighbors(self, resolution):
         neighbors = set()
-        for p in self.border_pixel:
-            for n in p.get_6connected_nbhood2(resolution):
-                if n not in self.border_pixel:
+        for p in self.pixel:
+            for n in p.get_26connected_nbhood2(resolution):
+                if n not in self.pixel:
                     neighbors.add(n)
         return neighbors
 
-    def expand(self, new_border_pixel, new_intensity):
+    def expand(self, new_pixel, new_intensity):
         # calc new medium
         n_old = self.size
-        n_new = len(new_border_pixel)
+        n_new = len(new_pixel)
         n = n_old + n_new
         self.medium_intensity = self.medium_intensity * n_old/n + new_intensity * n_new/n
 
         # update
-        self.border_pixel = new_border_pixel
+        self.pixel |= new_pixel
         self.update_size()
 
-    
+    def is_neighbor(self, region, resolution):
+        for p1 in self.pixel:
+            for p2 in region.pixel:
+                if p1 in p2.get_26connected_nbhood2(resolution):
+                    return True
+        return False
+
     def merge(self, region):
         # calc new medium
         n_self = self.size
@@ -342,7 +348,7 @@ class Region:
         self.medium_intensity = self.medium_intensity * n_self/n + region.medium_intensity * n_other/n
 
         # expand
-        self.border_pixel = self.border_pixel.union(region.border_pixel)
+        self.pixel |= region.pixel
         self.update_size()
 
 
@@ -354,3 +360,6 @@ class Region:
 
 # close spaces in splines (more values? -> relative)
 # calc dist random points as reference
+
+p = Point([3,4,5])
+print(p.get_6connected_nbhood2(200))

@@ -110,7 +110,7 @@ class Curve:
             key=lambda x: x[self.increasing_dim.value])
         self.min_values = min_values
         self.values = self.calc_all_values()
-        self.values = self.calc_unit_cube_values(self.estimate_length())
+        self.values = self.calc_unit_cube_values(self.estimate_length()*10)
         self.offset = None
         self.neighbor_pixels = None
 

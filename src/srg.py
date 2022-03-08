@@ -1,24 +1,26 @@
-from os import times
 import numpy as np
 from objects3d import Region, Point
 import time
+import multiprocessing as mp
 
 
-PATH = "data"
-RESOLUTION = 500
+PATH = "data/5"
+RESOLUTION = 75
 
-VALUE_MATRIX = np.zeros((RESOLUTION, RESOLUTION, RESOLUTION))
+VALUE_MATRIX = np.zeros((RESOLUTION, RESOLUTION, RESOLUTION), dtype=int)
 
 SEED_REGIONS_PER_DIM = 5    # devider of resolution
 SEED_POINT_NUM = SEED_REGIONS_PER_DIM ** 3
-THRESHOLD = 60
+THRESHOLD = 127.5
 REGION_MATRIX = np.full((RESOLUTION, RESOLUTION, RESOLUTION), SEED_POINT_NUM)
+
+ASSIGNMENT_COUNT = 0
 
 
 
 # read matrix from file
 
-file = open(PATH+"/value_matrix500", "r")
+file = open(PATH+"/value_matrix", "r")
 input = file.read()
 slices = input.split("]], [[")
 slices[0] = slices[0][3:]
@@ -56,75 +58,63 @@ for x_factor in range(SEED_REGIONS_PER_DIM):
             seeds.append(seed)
 
 t2 = time.time()
-print(seeds)
+print(f"seeds: {seeds}")
 
 
 # region growing
 
-regions = list()
-stashed_regions = list()
-n = 0
+regions = [(0,0)] * SEED_POINT_NUM    # tuples of pixel num and average value for each region at its index
+
+n = -1
 for seed in seeds:
-    regions.append(Region(n, Point(list(seed)), VALUE_MATRIX[seed[0]][seed[1]][seed[2]]))
-    REGION_MATRIX[seed[0]][seed[1]][seed[2]] = n
-    stashed_regions.append(None)
-    n += 1
+    VALUE_MATRIX[seed[0]][seed[1]][seed[2]] = n
+    n -= 1
 
 t3 = time.time()
 
+def check_pixel(position):
+    x = position[0]
+    y = position[1]
+    z = position[2]
+    value = VALUE_MATRIX[x][y][z]
+    if value < 0:
+        return False
+    for n in Point([x,y,z]).get_6connected_nbhood2(RESOLUTION):
+        n_val = VALUE_MATRIX[n.value[0]][n.value[1]][n.value[2]]
+        if n_val < 0 and abs(value - regions[n_val][1]) < THRESHOLD:
+            VALUE_MATRIX[x][y][z] = n_val
+            new_count = regions[n_val][0] + 1
+            new_avg = regions[n_val][1] * (new_count-1) / new_count + value * 1 / new_count
+            regions[n_val] = (new_count, new_avg)
+            return True
+    return False
+
+pool = mp.Pool(mp.cpu_count())
+c = 0
+u = 0
+
 changed = True
+assignments = 0
 while changed:
     changed = False
-    not_growing_regions = list()
-    print(f"regions: {len([r for r in regions if r])}")
-    for r in regions:
-        if not r:
-            continue
+    for x in range(RESOLUTION):
+        for y in range(RESOLUTION):
+            for z in range(RESOLUTION):
+                if check_pixel([x,y,z]):
+                    changed = True
+                    assignments += 1
+            #pool.map(check_pixel, [[x,y,z] for z in range(RESOLUTION)])
+    print(assignments)
 
-        print(f"{len(r.border_pixel)} in {r.num}")
-        new_pixel = set()
-        new_intensities = list()
+pool.close()
 
-        merged = False
-        for p in r.get_new_neighbors(RESOLUTION):
-            if merged:
-                break
-
-            x = p.value[0]
-            y = p.value[1]
-            z = p.value[2]
-
-            if REGION_MATRIX[x][y][z] == r.num:
-                continue
-
-            intensity = VALUE_MATRIX[x][y][z]
-
-            if abs(intensity - r.medium_intensity) < THRESHOLD:
-                new_pixel.add(p)
-                old_r_num = REGION_MATRIX[x][y][z]
-                if old_r_num != SEED_POINT_NUM and old_r_num > r.num:
-                    #print(f"merge {r.num} with {old_r_num}")
-                    old_r = regions[old_r_num] if regions[old_r_num] else stashed_regions[old_r_num]
-                    old_r.merge(r)
-                    not_growing_regions.append(r.num)
-                    merged = True
-                REGION_MATRIX[x][y][z] = r.num
-                new_intensities.append(intensity)
-
-        if new_pixel:
-            new_medium = sum(new_intensities) / len(new_pixel)
-            r.expand(new_pixel, new_medium)
-            changed = True
-        else:
-            not_growing_regions.append(r.num)
-
-    for i in not_growing_regions:
-        stashed_regions[i] = regions[i].copy()
-        regions[i] = None
 
 t4 = time.time()
 
-with open("data/region_matrix500", "w") as fp:
-    fp.write(str(REGION_MATRIX))
+# assign 0 to pixel without region
+VALUE_MATRIX[VALUE_MATRIX > 0] = 0
+
+with open(PATH + "/region_matrix", "w") as fp:
+    fp.write(str(VALUE_MATRIX.tolist()))
 
 print(f"finding seeds: {t2-t1} regions: {t4-t3}")

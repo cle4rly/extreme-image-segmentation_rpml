@@ -45,7 +45,7 @@ class Type1(Problem):
             if self.validate(new_curve):
                 self.curves.append(new_curve)
         
-        file = open("data/values13", "w")
+        file = open("data/9/points", "w")
 
         self.curve_points = list()
         for curve in self.curves:
@@ -112,8 +112,8 @@ class Type1(Problem):
 
     def get_curve_distance3(self, point):
         dist = np.float(1.73)
-        for val in self.curve_points:
-            new_dist = round(np.linalg.norm(np.array(point) - np.array(val)),2)
+        for curve_point in self.curve_points:
+            new_dist = round(np.linalg.norm(np.array(point) - np.array(curve_point.value)),2)
             if new_dist == 0:
                 return 0
             if new_dist < dist:
@@ -124,7 +124,7 @@ class Type1(Problem):
         dist = 1.73
         for curve in self.curves:
             for val in curve.values:
-                new_dist = round(np.linalg.norm(np.array(point.value) - np.array(val.value)),2)
+                new_dist = round(np.linalg.norm(np.array(point) - np.array(val.value)),2)
                 if new_dist < dist:
                     dist = new_dist
                 if new_dist == 0:
@@ -138,7 +138,7 @@ class Type1(Problem):
         x_value = image_number/self.resolution
         for y in range(self.resolution):
             pixel = [[x_value, y/self.resolution, z_value] for z_value in self.res_values]
-            dists = pool.map(self.get_curve_distance3, pixel)
+            dists = pool.map(self.get_curve_distance, pixel)
             array.append([round((255-(d*255))/2) for d in dists])
 
         print(f"{image_number}")
@@ -149,6 +149,7 @@ class Type1(Problem):
         array = [0] * self.resolution
         for i in range(self.resolution):
             image = self.add_noise(self.to_image(i))
+            #image = self.to_image(i)
             array[i] = [list(img) for img in image]
         return ImageObj(self.resolution, array)
 
@@ -166,9 +167,9 @@ class Type1(Problem):
 
 
 
-p1 = Type1(10, 0.02, 500)
-#p1.save_image_stack("data/curves21")
-p1.plot()
+p1 = Type1(15, 0.1, 200)
+#p1.save_image_stack("data/curves1")
+#p1.plot()
 
 # fig = plt.figure()
 # ax = fig.add_subplot(projection='3d')

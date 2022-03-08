@@ -1,12 +1,11 @@
-import os
 from PIL import Image
 import numpy as np
 import random
-import json
+from matrix_parser import MatrixParser
 
 
-PATH = "data/output-total/curves4"
-RESOLUTION = 500
+PATH = "data/7"
+RESOLUTION = 25
 PROB_MATRIX = np.zeros((RESOLUTION, RESOLUTION, RESOLUTION))
 VALUE_MATRIX = np.zeros((RESOLUTION, RESOLUTION, RESOLUTION))
 VALUE_MATRIX = VALUE_MATRIX.tolist()
@@ -17,46 +16,26 @@ def save_image(location, num):
     img.save(f"{location}/image{num}.png")
 
 
-print("reading dists from file")
+PROB_MATRIX = MatrixParser.read_from_file(RESOLUTION, PATH + "/dist_matrix", dtype=float)
+max = np.amax(PROB_MATRIX)
 
-max = 0
-for x in range(RESOLUTION):
-    print(x)
-    file = open(PATH+"/dists"+str(x), "r")
-    input = file.read()
-    rows = input.split("], [")
-    rows[0] = rows[0][2:]
-    rows[-1] = rows[-1][:-2]
-    for y in range(RESOLUTION):
-        row = rows[y]
-        row = row.split(",")
-        for z in range(RESOLUTION):
-            d = float(row[z])
-            PROB_MATRIX[x][y][z] = d
-            if d > max:
-                max = d
-            z += 1
-        y += 1
-
-print(f"max = {max}")
-
+print(f"max2 = {max}")
 
 print("dists to probabilities")
 # (1 - curve, 0 - max dist)
 
 for x in range(RESOLUTION):
-    print(x)
     for y in range(RESOLUTION):
         for z in range(RESOLUTION):
-            PROB_MATRIX[x][y][z] = 1 - PROB_MATRIX[x][y][z]/max
+            PROB_MATRIX[x][y][z] = (1 - PROB_MATRIX[x][y][z]/max)**10
 
 
 # gen both noises
 
-SIGMA = 30
+SIGMA = 40
 WHITE = 255
-MEAN1 = WHITE*3/10
-MEAN2 = WHITE*7/10
+MEAN1 = WHITE*4/10
+MEAN2 = WHITE*6/10
 
 err = 0
 
@@ -84,7 +63,6 @@ print(err)
 print("choose values and save files")
 
 for x in range(RESOLUTION):
-    print(x)
     for y in range(RESOLUTION):
         for z in range(RESOLUTION):
             noises = [1,2]
@@ -95,9 +73,8 @@ for x in range(RESOLUTION):
                 VALUE_MATRIX[x][y][z] = int(random.choice(noise1))
             else:
                 VALUE_MATRIX[x][y][z] = int(random.choice(noise2))
-    #save_image("data/test", x)
 
 
 
-with open("data/value_matrix500", "w") as fp:
+with open(PATH+"/random_matrix", "w") as fp:
     fp.write(str(VALUE_MATRIX))
