@@ -1,92 +1,168 @@
-import random
-from problems import ImageObj, Type1
-from objects3d import Point
+import numpy as np
+from objects3d import Region, Point
+import time
 
 
-class Region:
+PATH = "data/7"
+RESOLUTION = 25
 
-    def __init__(self, seed_point, seed_intensity) -> None:
-        self.medium_intensity = seed_intensity
-        self.inner_pixel = set()
-        self.inner_border_pixel = set()
-        self.border_pixel = {seed_point}
-    
-    def get_new_neighbors(self, resolution):
-        neighbors = set()
-        for p in self.border_pixel:
-            for n in p.get_6connected_nbhood(resolution):
-                if n not in self.border_pixel and n not in self.inner_border_pixel:
-                    neighbors.add(n)
-        return neighbors
+VALUE_MATRIX = np.zeros((RESOLUTION, RESOLUTION, RESOLUTION))
 
-    def expand(self, new_border_pixel, new_intensity):
-        self.inner_pixel.add(self.inner_border_pixel)
-        self.inner_border_pixel.add(self.border_pixel)
-        self.border_pixel = new_border_pixel
-
-        # calc new medium
-        n_old = len(self.inner_pixel) + len(self.inner_border_pixel) + len(self.border_pixel)
-        n_new = len(new_border_pixel)
-        n = n_old + n_new
-        self.medium_intensity = self.medium_intensity * n_old/n + new_intensity * n_new/n
+SEED_REGIONS_PER_DIM = 4
+SEED_POINT_NUM = SEED_REGIONS_PER_DIM ** 3
+THRESHOLD = 127.5
+REGION_MATRIX = np.full((RESOLUTION, RESOLUTION, RESOLUTION), SEED_POINT_NUM)
 
 
-class SeededRegionGrowing:
 
-    def __init__(self, img, seed_points_num=100, intensity_threshold=20) -> None:
-        self.image: ImageObj = img
-        self.seed_points_num = seed_points_num
-        self.intensity_threshold = intensity_threshold
-        self.seed_points = self.get_seed_points()
-        print(self.seed_points)
-        self.regions = [Region(sp, self.image.get_intensity(sp)) for sp in self.seed_points]
+# read matrix from file
 
-    # TODO: better method (e.g. max per cube)
-    def get_seed_points(self):
-        seeds = list()
-        for _ in range(self.seed_points_num):
-            x = random.randint(0, self.image.resolution-1)
-            y = random.randint(0, self.image.resolution-1)
-            rand_row = self.image.values[x][y]
-            z = rand_row.index(max(rand_row))
-            seed = Point([x/self.image.resolution, y/self.image.resolution, z/self.image.resolution])
-            seed.round_to_pixel(self.image.resolution)
+file = open(PATH+"/value_matrix", "r")
+input = file.read()
+slices = input.split("]], [[")
+slices[0] = slices[0][3:]
+slices[-1] = slices[-1][:-3]
+for x in range(RESOLUTION):
+    print(x)
+    rows = slices[x].split("], [")
+    for y in range(RESOLUTION):
+        row = rows[y]
+        row = row.split(",")
+        for z in range(RESOLUTION):
+            VALUE_MATRIX[x][y][z] = int(row[z])
+            z += 1
+        y += 1
+
+
+t1 = time.time()
+
+# find seed points
+
+seeds = list()
+for x_factor in range(SEED_REGIONS_PER_DIM):
+    for y_factor in range(SEED_REGIONS_PER_DIM):
+        for z_factor in range(SEED_REGIONS_PER_DIM):
+            length = int(RESOLUTION/SEED_REGIONS_PER_DIM)
+            seed = (x_factor*length, y_factor*length, z_factor*length)
+            max = 0
+            for x in range(x_factor*length, (x_factor+1)*length):
+                for y in range(y_factor*length, (y_factor+1)*length):
+                    for z in range(z_factor*length, (z_factor+1)*length):
+                        val = VALUE_MATRIX[x][y][z]
+                        if val > max:
+                            max = val
+                            seed = (x,y,z)
             seeds.append(seed)
-        return seeds
+"""
 
-    def expand_regions(self):
-        changed = True
-        while changed:
-            changed = False
-            for r in self.regions:
-                new_pixel = set()
-                new_intensities = list()
-                for p in r.get_new_neighbors(self.image.resolution):
-                    intensity = self.image.get_intensity(p)
-                    if abs(intensity - r.medium_intensity) < self.intensity_threshold:
-                        new_pixel.add(p)
-                        new_intensities.append(intensity)
-                if new_pixel:
-                    new_medium = sum(new_pixel) / len(new_pixel)
-                    r.expand(new_pixel, new_medium)
-                    changed = True
+seeds = list()
+while len(seeds)<SEED_POINT_NUM:
+    s = (random.choice(range(RESOLUTION)), random.choice(range(RESOLUTION)), random.choice(range(RESOLUTION)))
+    if s not in seeds:
+        seeds.append(s)
+"""
+
+t2 = time.time()
+print(seeds)
+
+# region growing
+
+regions = list()
+n = 0
+for seed in seeds:
+    regions.append(Region(n, Point(list(seed)), VALUE_MATRIX[seed[0]][seed[1]][seed[2]]))
+    REGION_MATRIX[seed[0]][seed[1]][seed[2]] = n
+    n += 1
+
+t3 = time.time()
+
+changed = True
+while changed:
+    changed = False
+    not_growing_regions = list()
+    print(f"regions: {len([r for r in regions if r])}")
+    for r in regions:
+        if not r:
+            continue
+
+        print(f"{len(r.pixel)} in {r.num}")
+        new_pixel = set()
+        new_intensities = list()
+
+        for p in r.get_new_neighbors(RESOLUTION):
+
+            x = p.value[0]
+            y = p.value[1]
+            z = p.value[2]
+
+            # pixel already belongs to another region
+            if REGION_MATRIX[x][y][z] != SEED_POINT_NUM:
+                continue
+
+            intensity = VALUE_MATRIX[x][y][z]
+
+            if abs(intensity - r.medium_intensity) < THRESHOLD and p not in new_pixel:
+                new_pixel.add(p)
+                new_intensities.append(intensity)
+                REGION_MATRIX[x][y][z] = r.num
+
+        if new_pixel:
+            new_medium = sum(new_intensities) / len(new_pixel)
+            r.expand(new_pixel, new_medium)
+            changed = True
+        else:
+            not_growing_regions.append(r.num)
+
+    for i in not_growing_regions:
+        regions[i] = None
 
 
-p1 = Type1(5, 0.005)
-img = p1.get_image_object()
-srg = SeededRegionGrowing(img)
-for r in srg.regions:
-    print(r.border_pixel)
-    print(r.inner_border_pixel)
-    print(r.inner_pixel)
-    print()
-srg.expand_regions()
-for r in srg.regions:
-    print(r.border_pixel)
-    print(r.inner_border_pixel)
-    print(r.inner_pixel)
-    print()
+
+final_regions = dict()      # key: r num, value: r
+for x in range(RESOLUTION):
+    for y in range(RESOLUTION):
+        for z in range(RESOLUTION):
+            r = REGION_MATRIX[x][y][z]
+            intensity = VALUE_MATRIX[x][y][z]
+            if r not in final_regions.keys():
+                final_regions[r] = Region(r, Point([x,y,z]), intensity)
+            else:
+                final_regions[r].expand({Point([x,y,z])}, intensity)
 
 
-# resolution aus pixel raus (liber nur index)
-# regions mergen!!!
+# merge neighbor regions
+final_regions = list(final_regions.values())
+changed = True
+merged = set()
+while changed:
+    changed = False
+    for i1 in range(len(final_regions)):
+        if i1 in merged:
+            continue
+        r1 = final_regions[i1]
+        for i2 in range(i1+1, len(final_regions)):
+            if i2 in merged:
+                continue
+            r2 = final_regions[i2]
+            if r1.is_neighbor(r2, RESOLUTION) and abs(r1.medium_intensity - r2.medium_intensity) < THRESHOLD:
+                final_regions[i1].merge(final_regions[i2])
+                merged.add(i2)
+                changed = True
+                print(f"merged {i2} in {i1}")
+
+print(f"regions before merging: {len(final_regions)}")
+final_regions = [final_regions[i] for i in range(len(final_regions)) if i not in merged]
+print(f"regions after merging: {len(final_regions)}")
+
+REGION_MATRIX = np.full((RESOLUTION, RESOLUTION, RESOLUTION), SEED_POINT_NUM)
+for r in final_regions:
+    for p in r.pixel:
+        REGION_MATRIX[p.value[0]][p.value[1]][p.value[2]] = r.num
+
+
+t4 = time.time()
+
+with open(PATH + "/region_matrix", "w") as fp:
+    fp.write(str(str(REGION_MATRIX.tolist())))
+
+print(f"finding seeds: {t2-t1} regions: {t4-t3}")

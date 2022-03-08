@@ -1,13 +1,10 @@
-from os import sep
 import random
 from enum import Enum
 import numpy as np
-from numpy.lib.scimath import sqrt
 from scipy.interpolate import CubicSpline
 import matplotlib.pyplot as plt
 import itertools
 from typing import Tuple
-import statistics
 
 
 class Dimension(Enum):
