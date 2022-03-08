@@ -1,20 +1,17 @@
 import numpy as np
 from objects3d import Region, Point
 import time
-import multiprocessing as mp
 
 
-PATH = "data/5"
-RESOLUTION = 75
+PATH = "data/7"
+RESOLUTION = 25
 
-VALUE_MATRIX = np.zeros((RESOLUTION, RESOLUTION, RESOLUTION), dtype=int)
+VALUE_MATRIX = np.zeros((RESOLUTION, RESOLUTION, RESOLUTION))
 
-SEED_REGIONS_PER_DIM = 5    # devider of resolution
+SEED_REGIONS_PER_DIM = 4
 SEED_POINT_NUM = SEED_REGIONS_PER_DIM ** 3
 THRESHOLD = 127.5
 REGION_MATRIX = np.full((RESOLUTION, RESOLUTION, RESOLUTION), SEED_POINT_NUM)
-
-ASSIGNMENT_COUNT = 0
 
 
 
@@ -45,9 +42,9 @@ seeds = list()
 for x_factor in range(SEED_REGIONS_PER_DIM):
     for y_factor in range(SEED_REGIONS_PER_DIM):
         for z_factor in range(SEED_REGIONS_PER_DIM):
-            max = 0
-            seed = (0,0,0)
             length = int(RESOLUTION/SEED_REGIONS_PER_DIM)
+            seed = (x_factor*length, y_factor*length, z_factor*length)
+            max = 0
             for x in range(x_factor*length, (x_factor+1)*length):
                 for y in range(y_factor*length, (y_factor+1)*length):
                     for z in range(z_factor*length, (z_factor+1)*length):
@@ -56,65 +53,116 @@ for x_factor in range(SEED_REGIONS_PER_DIM):
                             max = val
                             seed = (x,y,z)
             seeds.append(seed)
+"""
+
+seeds = list()
+while len(seeds)<SEED_POINT_NUM:
+    s = (random.choice(range(RESOLUTION)), random.choice(range(RESOLUTION)), random.choice(range(RESOLUTION)))
+    if s not in seeds:
+        seeds.append(s)
+"""
 
 t2 = time.time()
-print(f"seeds: {seeds}")
-
+print(seeds)
 
 # region growing
 
-regions = [(0,0)] * SEED_POINT_NUM    # tuples of pixel num and average value for each region at its index
-
-n = -1
+regions = list()
+n = 0
 for seed in seeds:
-    VALUE_MATRIX[seed[0]][seed[1]][seed[2]] = n
-    n -= 1
+    regions.append(Region(n, Point(list(seed)), VALUE_MATRIX[seed[0]][seed[1]][seed[2]]))
+    REGION_MATRIX[seed[0]][seed[1]][seed[2]] = n
+    n += 1
 
 t3 = time.time()
 
-def check_pixel(position):
-    x = position[0]
-    y = position[1]
-    z = position[2]
-    value = VALUE_MATRIX[x][y][z]
-    if value < 0:
-        return False
-    for n in Point([x,y,z]).get_6connected_nbhood2(RESOLUTION):
-        n_val = VALUE_MATRIX[n.value[0]][n.value[1]][n.value[2]]
-        if n_val < 0 and abs(value - regions[n_val][1]) < THRESHOLD:
-            VALUE_MATRIX[x][y][z] = n_val
-            new_count = regions[n_val][0] + 1
-            new_avg = regions[n_val][1] * (new_count-1) / new_count + value * 1 / new_count
-            regions[n_val] = (new_count, new_avg)
-            return True
-    return False
-
-pool = mp.Pool(mp.cpu_count())
-c = 0
-u = 0
-
 changed = True
-assignments = 0
 while changed:
     changed = False
-    for x in range(RESOLUTION):
-        for y in range(RESOLUTION):
-            for z in range(RESOLUTION):
-                if check_pixel([x,y,z]):
-                    changed = True
-                    assignments += 1
-            #pool.map(check_pixel, [[x,y,z] for z in range(RESOLUTION)])
-    print(assignments)
+    not_growing_regions = list()
+    print(f"regions: {len([r for r in regions if r])}")
+    for r in regions:
+        if not r:
+            continue
 
-pool.close()
+        print(f"{len(r.pixel)} in {r.num}")
+        new_pixel = set()
+        new_intensities = list()
+
+        for p in r.get_new_neighbors(RESOLUTION):
+
+            x = p.value[0]
+            y = p.value[1]
+            z = p.value[2]
+
+            # pixel already belongs to another region
+            if REGION_MATRIX[x][y][z] != SEED_POINT_NUM:
+                continue
+
+            intensity = VALUE_MATRIX[x][y][z]
+
+            if abs(intensity - r.medium_intensity) < THRESHOLD and p not in new_pixel:
+                new_pixel.add(p)
+                new_intensities.append(intensity)
+                REGION_MATRIX[x][y][z] = r.num
+
+        if new_pixel:
+            new_medium = sum(new_intensities) / len(new_pixel)
+            r.expand(new_pixel, new_medium)
+            changed = True
+        else:
+            not_growing_regions.append(r.num)
+
+    for i in not_growing_regions:
+        regions[i] = None
+
+
+
+final_regions = dict()      # key: r num, value: r
+for x in range(RESOLUTION):
+    for y in range(RESOLUTION):
+        for z in range(RESOLUTION):
+            r = REGION_MATRIX[x][y][z]
+            intensity = VALUE_MATRIX[x][y][z]
+            if r not in final_regions.keys():
+                final_regions[r] = Region(r, Point([x,y,z]), intensity)
+            else:
+                final_regions[r].expand({Point([x,y,z])}, intensity)
+
+
+# merge neighbor regions
+final_regions = list(final_regions.values())
+changed = True
+merged = set()
+while changed:
+    changed = False
+    for i1 in range(len(final_regions)):
+        if i1 in merged:
+            continue
+        r1 = final_regions[i1]
+        for i2 in range(i1+1, len(final_regions)):
+            if i2 in merged:
+                continue
+            r2 = final_regions[i2]
+            if r1.is_neighbor(r2, RESOLUTION) and abs(r1.medium_intensity - r2.medium_intensity) < THRESHOLD:
+                final_regions[i1].merge(final_regions[i2])
+                merged.add(i2)
+                changed = True
+                print(f"merged {i2} in {i1}")
+
+print(f"regions before merging: {len(final_regions)}")
+final_regions = [final_regions[i] for i in range(len(final_regions)) if i not in merged]
+print(f"regions after merging: {len(final_regions)}")
+
+REGION_MATRIX = np.full((RESOLUTION, RESOLUTION, RESOLUTION), SEED_POINT_NUM)
+for r in final_regions:
+    for p in r.pixel:
+        REGION_MATRIX[p.value[0]][p.value[1]][p.value[2]] = r.num
 
 
 t4 = time.time()
 
-# assign 0 to pixel without region
-VALUE_MATRIX[VALUE_MATRIX > 0] = 0
-
 with open(PATH + "/region_matrix", "w") as fp:
-    fp.write(str(VALUE_MATRIX.tolist()))
+    fp.write(str(str(REGION_MATRIX.tolist())))
 
 print(f"finding seeds: {t2-t1} regions: {t4-t3}")
